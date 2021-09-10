@@ -6,8 +6,8 @@ const TableService = function(options = {}) {
   this._promise = options.promise;
   this._context = options.context;
   this._inputs = options.inputs;
-  this._fatherValue = options.fatherValue;
-  this._foreignKey = options.foreignKey;
+  this._fatherValues = options.fatherValues;
+  this._foreignKeys = options.foreignKeys;
   this._workflow = null;
   this._deleteFeaturesIndexes = [];
   this._isrelation = options.isrelation || false;

@@ -1,5 +1,4 @@
-const inherit = g3wsdk.core.utils.inherit;
-const base =  g3wsdk.core.utils.base;
+const {base, inherit} = g3wsdk.core.utils;
 const Component = g3wsdk.gui.vue.Component;
 const {resizeMixin} = g3wsdk.gui.vue.Mixins;
 const Media_Field = g3wsdk.gui.vue.Fields.media_field;
@@ -30,7 +29,7 @@ const InternalComponent = Vue.extend({
       const OtherElementHeight = $('.navbar-header').height() + $('.editing_table_title').height() +
         $('.editing_table_header').height() +  $('.dataTables_length').height() + $('.dataTables_paginate paging_simple_numbers').height() +
         $('.dataTables_filter').height() + $('.dataTables_scrollHeadInner').height() + $('.table_editing_footer_buttons').height();
-      $('#editing_table  div.dataTables_scrollBody').height(tableHeight - tableHeaderHeight - OtherElementHeight - 50);
+      $('#editing_table  div.dataTables_scrollBody').height(tableHeight - tableHeaderHeight - OtherElementHeight - 60);
     },
     showValue(key) {
       return !!this.state.headers.find(header => header.name === key);

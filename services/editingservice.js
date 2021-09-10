@@ -387,7 +387,6 @@ proto.activeQueryInfo = function() {
 };
 
 proto.setLayersColor = function() {
-
   const LAYERS_COLOR = [
     "#C43C39",
     '#d95f02',
@@ -694,13 +693,13 @@ proto._getRelationLayerId = function({layerId, relation}={}){
 };
 
 proto.getRelationsByFeature = function({layerId, relation, feature, layerType}={}) {
-  const {ownField, relationField} = this._getRelationFieldsFromRelation({
+  const {ownFields, relationFields} = this._getRelationFieldsFromRelation({
     layerId,
     relation
   });
-  const featureValue = feature.get(relationField);
+  const featureValues = relationFields.map(relationField => feature.get(relationField));
   const features = this._getFeaturesByLayerId(layerId);
-  return features.filter(feature => feature.get(ownField) == featureValue);
+  return features.filter(feature => ownFields.reduce((accumulator, ownField , ownFieldIndex) => feature.get(ownField) == featureValues[ownFieldIndex], true));
 };
 
 proto.registerLeavePage = function(bool){
@@ -776,6 +775,13 @@ proto.clearState = function() {
   this.state.message =  null;
 };
 
+/**
+ * Get all relation in editing
+ * @param layerId
+ * @param relations
+ * @param feature
+ * @returns {[]}
+ */
 proto.getRelationsInEditing = function({layerId, relations, feature}={}) {
   let relationsinediting = [];
   let relationinediting;
@@ -841,13 +847,13 @@ proto.fatherInEditing = function(layerId) {
 proto._getRelationFieldsFromRelation = function({layerId, relation} = {}) {
   const childId = relation.getChild ? relation.getChild() : relation.child;
   const isChild = childId !== layerId;
-  const _fatherField = relation.getFatherField ? relation.getFatherField() : relation.fatherField;
-  const _childField = relation.getChildField ? relation.getChildField() : relation.childField;
-  const ownField = isChild ? _fatherField : _childField;
-  const relationField = isChild ? _childField : _fatherField;
+  const _fatherFields = relation.getFatherFields ? relation.getFatherFields() : relation.fatherFields;
+  const _childFields = relation.getChildFields? relation.getChildFields() : relation.childFields;
+  const ownFields = isChild ? _fatherFields : _childFields;
+  const relationFields = isChild ? _childFields : _fatherFields;
   return {
-    ownField,
-    relationField
+    ownFields,
+    relationFields
   }
 };
 
@@ -899,14 +905,16 @@ proto._getFeaturesByLayerId = function(layerId) {
 proto.getLayersDependencyFeaturesFromSource = function({layerId, relation, feature, operator='eq'}={}){
   return new Promise(resolve => {
     const features = this._getFeaturesByLayerId(layerId);
-    const {ownField, relationField} = this._getRelationFieldsFromRelation({
+    const {ownFields, relationFields} = this._getRelationFieldsFromRelation({
       layerId,
       relation
     });
-    const featureValue = feature.get(relationField);
+    const featureValues = relationFields.map(relationField => feature.get(relationField));
     const find = operator === 'eq' ? features.find(featureSource => {
-      const featureSourceValue = featureSource.get(ownField) ;
-      return featureSourceValue == featureValue;
+      return ownFields.reduce((accumulator, ownField, ownFieldIndex) => {
+        const featureSourceValue = featureSource.get(ownField) ;
+        return featureSourceValue == featureValues[ownFieldIndex];
+      }, true);
     }): false;
     resolve(find);
   })

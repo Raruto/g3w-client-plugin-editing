@@ -20,16 +20,15 @@ proto.run = function(inputs, context) {
   const layerName = originalLayer.getName();
   const headers = originalLayer.getEditingFields();
   this._isContentChild = WorkflowsStack.getLength() > 1;
-  const foreignKey = this._isContentChild ? context.excludeFields[0] :  null;
+  const foreignKeys = this._isContentChild ? context.excludeFields :  [];
   const exclude = this._isContentChild && context.exclude;
   const capabilities = originalLayer.getEditingCapabilities();
   const editingLayer = originalLayer.getEditingLayer();
   let features = editingLayer.readEditingFeatures();
   if (exclude && features.length) {
-    const {value} = exclude;
-    features = features.filter(feature => {
-      const featureValue = feature.get(foreignKey);
-      return featureValue != value;
+    const {values} = exclude;
+    foreignKeys.forEach((foreignKey, index)=> {
+      features = features.filter(feature => feature.get(foreignKey) != values[index]);
     })
   }
   const content = new TableComponent({
@@ -41,13 +40,14 @@ proto.run = function(inputs, context) {
     context,
     inputs,
     capabilities,
-    fatherValue: context.fatherValue,
-    foreignKey
+    fatherValues: context.fatherValues,
+    foreignKeys
   });
   GUI.showContent({
     content,
     push: this._isContentChild,
     showgoback: false,
+    perc: 100,
     closable: false
   });
   this.disableSidebar(true);

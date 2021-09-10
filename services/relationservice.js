@@ -36,18 +36,20 @@ const RelationService = function(layerId, options = {}) {
   //get type of relation
   const relationLayerType = this._layerType === Layer.LayerTypes.VECTOR ? relationLayer.getGeometryType() : Layer.LayerTypes.TABLE;
   //
-  const { ownField: fatherRelationField} = this.getEditingService()._getRelationFieldsFromRelation({
+  const { ownFields: fatherRelationFields} = this.getEditingService()._getRelationFieldsFromRelation({
     layerId: this._parentLayerId,
     relation: this.relation
   });
-  // check if father is editable field. It is useful to fill relation filed of relation feature
-  this._isFatherFieldEditable = this._parentLayer.isEditingFieldEditable(fatherRelationField);
+  // check if one of father fields is editable. It is useful to fill relation filed of relation feature
+  this._isFatherFieldEditable = fatherRelationFields.reduce((accumulator, fatherRelationField) => {
+      return accumulator || this._parentLayer.isEditingFieldEditable(fatherRelationField)
+    }, false);
   this._isExternalFieldRequired = this._checkIfExternalFieldRequired();
-  // check if parent field is editable. If not get the id of parent feature so the server can genratate the right value
+  // check if parent field is editable. If not get the id of parent feature so the server can generate the right value
   // to fill the field of relation layer feature when commit
-  this._currentParentFeatureRelationFieldValue = this._isFatherFieldEditable ?
-      this.getCurrentWorkflowData().feature.get(fatherRelationField) :
-      this.getCurrentWorkflowData().feature.getId();
+  this._currentParentFeatureRelationFieldsValue = this._isFatherFieldEditable ?
+      fatherRelationFields.map(fatherRelationField => this.getCurrentWorkflowData().feature.get(fatherRelationField)) :
+      [this.getCurrentWorkflowData().feature.getId()];
   ///////////////////////////////////////
   this._relationTools = [];
   this._add_link_workflow = null;
@@ -268,26 +270,31 @@ proto.getEditingService = function() {
 proto.updateExternalKeyValueRelations = function(input) {
   const session = this.getEditingService().getToolBoxById(this._relationLayerId).getSession();
   //ownFiled is the field of relation feature link to parent feature layer
-  const {ownField, relationField} = this.getEditingService()._getRelationFieldsFromRelation({
+  const {ownFields, relationFields} = this.getEditingService()._getRelationFieldsFromRelation({
     layerId: this._relationLayerId,
     relation: this.relation
   });
+  this._currentParentFeatureRelationFieldsValue = [];
   // check if parent form input that is changing is the field in relation of the current feature relation Layer
-  if (this._isFatherFieldEditable && input.name === relationField) {
-    // chnage currentParentFieature relation value
-    this._currentParentFeatureRelationFieldValue = input.value;
-    // loop all features relations
-    this.relations.forEach(relation => {
-      const fields = relation.fields;
-      // field relation field of current relation feature
-      const field = fields.find(field => field.name === ownField);
-      if (field) field.value = this._currentParentFeatureRelationFieldValue;
-      relation = this._getRelationFeature(relation.id);
-      const originalRelation = relation.clone();
-      relation.set(ownField, input.value);
-      if (!relation.isNew()) session.pushUpdate(this._relationLayerId, relation, originalRelation);
-    })
-  }
+  relationFields.forEach(relationField => {
+    if (this._isFatherFieldEditable && input.name === relationField) {
+      // chnage currentParentFieature relation value
+      this._currentParentFeatureRelationFieldsValue.push(input.value);
+      // loop all features relations
+      this.relations.forEach(relation => {
+        const fields = relation.fields;
+        relation = this._getRelationFeature(relation.id);
+        const originalRelation = relation.clone();
+        ownFields.forEach(ownField => {
+          // field relation field of current relation feature
+          const field = fields.find(field => field.name === ownField);
+          if (field) field.value = input.value;
+          relation.set(ownField, input.value);
+        });
+        if (!relation.isNew()) session.pushUpdate(this._relationLayerId, relation, originalRelation);
+      })
+    }
+  })
 };
 
 proto._getRelationFieldsValue = function(relation) {
@@ -333,7 +340,7 @@ proto.addRelation = function() {
   const workflow = this._getAddFeatureWorkflow();
   const options = this._createWorkflowOptions();
   const session = options.context.session;
-  const {ownField, relationField} = this.getEditingService()._getRelationFieldsFromRelation({
+  const {ownFields, relationFields} = this.getEditingService()._getRelationFieldsFromRelation({
     layerId: this._relationLayerId,
     relation: this.relation
   });
@@ -343,16 +350,22 @@ proto.addRelation = function() {
   const percContent = isVector && workflow.bindEscKeyUp();
   promise.then(outputs => {
     const {newFeatures, originalFeatures} = outputs.relationFeatures;
-    const setRelationFieldValue = value =>{
-      newFeatures.forEach((newFeature, index) =>{
-        const originalFeature = originalFeatures[index];
-        newFeature.set(ownField, value);
-        if (parentFeature.isNew()) originalFeature.set(ownField, value);
-        this.getLayer().getEditingSource().updateFeature(newFeature);
-        session.pushUpdate(this._relationLayerId, newFeature, originalFeature);
-      })
+    const setRelationFieldValue = values =>{
+      values.forEach(value => {
+        newFeatures.forEach((newFeature, index) =>{
+          const originalFeature = originalFeatures[index];
+          ownFields.forEach(ownField => {
+            newFeature.set(ownField, value);
+            if (parentFeature.isNew()) originalFeature.set(ownField, value);
+          });
+          this.getLayer().getEditingSource().updateFeature(newFeature);
+          session.pushUpdate(this._relationLayerId, newFeature, originalFeature);
+        })
+      });
+
     };
-    setRelationFieldValue(this._currentParentFeatureRelationFieldValue);
+    setRelationFieldValue(this._currentParentFeatureRelationFieldsValue);
+
     if (parentFeature.isNew() && this._isFatherFieldEditable) {
       const keyRelationFeatureChange = parentFeature.on('propertychange', evt => {
         if (parentFeature.isNew()) {
@@ -383,14 +396,14 @@ proto.linkRelation = function() {
   const workflow = this._getLinkFeatureWorkflow();
   const options = this._createWorkflowOptions();
   const session = options.context.session;
-  const {ownField} = this.getEditingService()._getRelationFieldsFromRelation({
+  const {ownFields} = this.getEditingService()._getRelationFieldsFromRelation({
     layerId: this._relationLayerId,
     relation: this.relation
   });
   //add options to exclude features
   options.context.exclude = {
-    value: this._currentParentFeatureRelationFieldValue,
-    field: ownField
+    values: this._currentParentFeatureRelationFieldsValue,
+    fields: ownFields
   };
   if (isVector) options.context.style = this.getUnlinkedStyle();
   const feature = this.getCurrentWorkflowData().feature;
@@ -407,9 +420,7 @@ proto.linkRelation = function() {
     options.context.beforeRun = async () => {
       mapService.showMapSpinner();
       await new Promise((resolve) =>{
-        setTimeout(()=>{
-          resolve();
-        })
+        setTimeout(()=>resolve())
       });
       await getRelationFeatures();
       mapService.hideMapSpinner();
@@ -446,7 +457,7 @@ proto.linkRelation = function() {
           const relationAlreadyLinked = this.relations.find(rel => rel.id === relation.getId());
           if (!relationAlreadyLinked) {
             const originalRelation = relation.clone();
-            relation.set(ownField, this._currentParentFeatureRelationFieldValue);
+            ownFields.forEach((ownField, index) => relation.set(ownField, this._currentParentFeatureRelationFieldsValue[index]));
             this.getCurrentWorkflowData().session.pushUpdate(this._relationLayerId , relation, originalRelation);
             this.relations.push(this._createRelationObj(relation));
             this.emitEventToParentWorkFlow();
@@ -473,11 +484,11 @@ proto.linkRelation = function() {
  */
 proto._checkIfExternalFieldRequired = function() {
   // own Field is relation Field of Relation Layer
-  const {ownField} = this.getEditingService()._getRelationFieldsFromRelation({
+  const {ownFields} = this.getEditingService()._getRelationFieldsFromRelation({
     layerId: this._relationLayerId,
     relation: this.relation
   });
-  return this.getEditingService().isFieldRequired(this._relationLayerId, ownField);
+  return this.getEditingService().isFieldRequired(this._relationLayerId, ownFields);
 };
 
 proto.isRequired = function() {
@@ -491,7 +502,7 @@ proto._getRelationFeature = function(featureId) {
 
 proto.unlinkRelation = function(index, dialog=true) {
   const d = $.Deferred();
-  const {ownField} = this.getEditingService()._getRelationFieldsFromRelation({
+  const {ownFields} = this.getEditingService()._getRelationFieldsFromRelation({
     layerId: this._relationLayerId,
     relation: this.relation
   });
@@ -499,7 +510,7 @@ proto.unlinkRelation = function(index, dialog=true) {
     const relation = this.relations[index];
     const feature = this.getLayer().getEditingSource().getFeatureById(relation.id);
     const originalRelation = feature.clone();
-    feature.set(ownField, null);
+    ownFields.forEach(ownField => feature.set(ownField, null));
     this.getCurrentWorkflowData().session.pushUpdate(this._relationLayerId, feature, originalRelation);
     this.relations.splice(index, 1);
     d.resolve(true);
@@ -523,7 +534,7 @@ proto.getCurrentWorkflowData = function() {
 };
 
 proto._createWorkflowOptions = function(options={}) {
-  const {ownField} = this.getEditingService()._getRelationFieldsFromRelation({
+  const {ownFields} = this.getEditingService()._getRelationFieldsFromRelation({
     layerId: this._relationLayerId,
     relation: this.relation
   });
@@ -531,8 +542,8 @@ proto._createWorkflowOptions = function(options={}) {
     parentFeature: this.getCurrentWorkflowData().feature,
     context: {
       session: this.getCurrentWorkflowData().session,
-      excludeFields: [ownField],
-      fatherValue: this._currentParentFeatureRelationFieldValue,
+      excludeFields: ownFields,
+      fatherValues: this._currentParentFeatureRelationFieldsValue,
     },
     inputs: {
       features: options.features || [],

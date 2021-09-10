@@ -115,14 +115,13 @@ proto.run = function(inputs, context) {
         relation
       });
       const relationLayer = EditingService.getLayerById(relationId);
-      const {ownField} = EditingService._getRelationFieldsFromRelation({
+      const {ownFields} = EditingService._getRelationFieldsFromRelation({
         layerId: relationId,
         relation
       });
-      const field = relationLayer.getEditingFields().find((field) => {
-        return field.name === ownField;
-      });
-      return !field.validate.required;
+      return ownFields.map(ownField => relationLayer.getEditingFields().find(field => field.name === ownField)).reduce((accumultar, field)=> {
+        return accumultar && !field.validate.required;
+      }, true);
     });
     const promise = relations.length ? EditingService.getLayersDependencyFeatures(layerId, {
       feature,
